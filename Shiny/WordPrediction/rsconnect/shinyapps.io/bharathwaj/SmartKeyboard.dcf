@@ -1,0 +1,12 @@
+name: SmartKeyboard
+title: SmartKeyboard
+username:
+account: bharathwaj
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 3942173
+bundleId: 4455716
+url: https://bharathwaj.shinyapps.io/SmartKeyboard/
+when: 1618097635.47677
+asMultiple: FALSE
+asStatic: FALSE

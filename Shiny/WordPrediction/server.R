@@ -13,24 +13,24 @@ shinyServer(function(input, output) {
         }
         temps
         })
-    url<-a("Data Source", href = "https://www.google.com/")
+    url<-a("Data Source", href = "https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip")
     output$tab<-renderUI({
-        tagList("URL Link:", url)
+        tagList(url)
     })
     
-    url1<-a("Data Source", href = "https://www.google.com/")
-    url2<-a("Data Source", href = "https://www.google.com/")
+    url1<-a("RMarkdown", href = "https://rpubs.com/bharath2925/textanalysis")
+    url2<-a("Presentation", href = "https://rpubs.com/bharath2925/smartkeybrd")
     output$tab1<-renderUI({
-        tagList("RMarkdown:", url1)
+        tagList(url1)
     })
     
     output$tab2<-renderUI({
-        tagList("Presentation:", url2)
+        tagList(url2)
     })
     
-    url3<-a("Data Source", href = "https://www.google.com/")
+    url3<-a("Github Repository Link", href = "https://github.com/bharath2925/text-prediction-project-nlp")
     output$tab3<-renderUI({
-        tagList("Github Repository Link:", url3)
+        tagList(url3)
     })
 
     output$outputId <- renderText({

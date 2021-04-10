@@ -1,7 +1,7 @@
 library(dplyr)
 library(tm)
 
-FourGram_Models <- readRDS("data/data_model.rds")
+model <- readRDS("data/data_model.rds")
 SimpleGoodTuring<-readRDS("data/sgt_model.rds")
 
 
@@ -74,6 +74,6 @@ WordPredict <- function(sentence) {
 
 
 predictor <- list()
-predictor.FourGram_Model <- FourGram_Models
+predictor.FourGram_Model <- model
 predictor.SimpleGoodTuring <- SimpleGoodTuring
 predictor.WordPredict <- WordPredict

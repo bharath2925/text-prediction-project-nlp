@@ -19,14 +19,14 @@ if(file.exists("data/Coursera-SwiftKey.zip") &&
 #==========================2. Sample the data=========================================================================
 sampled_data <- c()
 
-tweet<-readLines("data/Coursera-SwiftKey/final/en_US/en_US.twitter.txt", warn = FALSE)
+tweet<-readLines("data/raw/final/en_US/en_US.twitter.txt", warn = FALSE)
 sampled_data<-c(sampled_data, sample(tweet, as.integer(length(tweet)*0.075)))
 rm("tweet")
 
-blogs<-readLines("data/Coursera-SwiftKey/final/en_US/en_US.blogs.txt", warn = FALSE)
+blogs<-readLines("data/raw/final/en_US/en_US.blogs.txt", warn = FALSE)
 sampled_data<-c(sampled_data, sample(blogs, as.integer(length(blogs)*0.075)))
 rm("blogs")
-news<-readLines("data/Coursera-SwiftKey/final/en_US/en_US.news.txt", warn = FALSE)
+news<-readLines("data/raw/final/en_US/en_US.news.txt", warn = FALSE)
 sampled_data<-c(sampled_data, sample(news, as.integer(length(news)*0.075)))
 rm("news")
 saveRDS(object = sampled_data, file = "data/raw/data_sampled.rds")
@@ -36,13 +36,6 @@ library(dplyr)
 library(quanteda)
 library(tm)
 library(hunspell)
-
-library(SnowballC)
-library(RWeka)
-
-library(slam)
-
-
 
 sampled_data <- readRDS("data/raw/data_sampled.rds")
 
@@ -135,11 +128,9 @@ sampled_data<-subset(sampled_data, sentence!=" ")
 
 
 ind<-as.integer(nrow(sampled_data)*0.75)
-train<-sampled_data[1:ind,]
-test<-sampled_data[(ind+1):nrow(sampled_data),]
+train<-data.frame(sentence = sampled_data[1:ind,])
+test<-data.frame(sentence = sampled_data[(ind+1):nrow(sampled_data),])
 
-sampled_data$len<-nchar(sampled_data$sentence)
-summary(sampled_data$len)
 
 generateNGram <- function(corpus, level = 1) {
   options(mc.cores=1)
@@ -183,15 +174,8 @@ FourGram_df$w3 <- FourGram_df$word$X3
 FourGram_df$w4 <- FourGram_df$word$X4
 FourGram_df <- subset(FourGram_df, select = c(w1,w2,w3,w4,freq))
 
-saveRDS(object = FourGram_df, file = "data/raw/data_ngram_file.rds")
-#========================================================================================================================
-library(dplyr)
-
-FourGram_df <- readRDS("data/raw/data_ngram_file.rds")
-
 
 FourGram_Models <- list()
-
 model<-list()
 
 
@@ -288,7 +272,7 @@ df4<-df3 %>%
   arrange(desc(Total_Freq, prob)) %>% ungroup
 
 model$bi<-df4
-
+rm("df3", "df4")
 #================================================================================
 
 
@@ -341,6 +325,7 @@ tf4<-tf3 %>%
   arrange(desc(Total_Freq, prob)) %>% ungroup
 
 model$ti<-tf4
+rm("tf3", "tf4")
 #================================================================================
 
 #Tetragram preds
@@ -354,21 +339,12 @@ FourGram_Models$w1w2w3w4 <- FourGram_df %>%
 colnames(FourGram_Models$w1w2w3w4) <-c("word1", "word2", "word3", "predword", "freq", "Total_Freq", "prob")
 
 model$tti<-FourGram_Models$w1w2w3w4
-
-saveRDS(object = FourGram_Models, file = "data/clean/data_model.rds")
+rm("FourGram_Models")
+saveRDS(object = model, file = "data/clean/data_model.rds")
 
 #========================================================================================================================
-library(dplyr)
-library(tm)
-library(SnowballC)
-library(cld3)
 
-data_clean_dir <- "data/clean"
-data_sgt_file <- "sgt_model"
-data_model_file <- "data_model"
-data_predictor <- "predictor_api"
-
-FourGram_Models <- readRDS("data/clean/data_model.rds")
+model <- readRDS("data/clean/data_model.rds")
 
 
 calculateSimpleGoodTuring <- function(model){
@@ -452,15 +428,6 @@ SimpleGoodTuring <- list()
 SimpleGoodTuring$bi<-calculateSimpleGoodTuring(model$bi)
 SimpleGoodTuring$ti<-calculateSimpleGoodTuring(model$ti)
 SimpleGoodTuring$tti<-calculateSimpleGoodTuring(model$tti)
-
-SimpleGoodTuring$w1w2w3 <- calculateSimpleGoodTuring(FourGram_Models$w1w2w3)
-SimpleGoodTuring$w2w3 <- calculateSimpleGoodTuring(FourGram_Models$w2w3)
-SimpleGoodTuring$w3 <- calculateSimpleGoodTuring(FourGram_Models$w3)
-SimpleGoodTuring$w1w3 <- calculateSimpleGoodTuring(FourGram_Models$w1w3)
-SimpleGoodTuring$w1w2 <- calculateSimpleGoodTuring(FourGram_Models$w1w2)
-SimpleGoodTuring$w1 <- calculateSimpleGoodTuring(FourGram_Models$w1)
-SimpleGoodTuring$w2 <- calculateSimpleGoodTuring(FourGram_Models$w2)
-SimpleGoodTuring$w4 <- calculateSimpleGoodTuring(FourGram_Models$w4)
 
 saveRDS(object = SimpleGoodTuring, file = "data/clean/sgt_model.rds")
 

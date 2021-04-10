@@ -56,7 +56,7 @@ shinyUI(fluidPage(
                                  h5("   ->The data for this model is taken from multiple online sources which are consolidated by SwiftKey"),
                                  h5("   ->The corpora are collected from publicly available sources by a web crawler. The crawler checks for language, so as to mainly get texts consisting of the desired language"),
                                  h5("   ->data is collected from three major sources, Twitter, Blogs and News"),
-                                 h5("   ->Overall corpus size was 0.6 GB. 1% of this data is used to design this smart keyboard"),
+                                 h5("   ->Overall corpus size was 0.6 GB. Based on the system configuration, 7% of this data is used to design this smart keyboard"),
                                  h5("Please find below link to the raw data source"),
                                  uiOutput("tab"))
                                  
