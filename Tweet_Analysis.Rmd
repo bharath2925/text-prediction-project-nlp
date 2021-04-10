@@ -1,0 +1,198 @@
+---
+title: "Next word prediction using N-grams - Text Data Analysis"
+author: "Bharathwaj Sundaresan"
+date: "3/14/2021"
+output: html_document
+---
+### Executive Summary
+
+Around the world, people are spending an increasing amount of time on their mobile devices for email, social networking, banking and a whole range of other activities. But typing on mobile devices can be a serious pain. This project focuses on analyzing a large corpus of text documents to discover the structure in the data and how words are put together. This is a markdown report, showcasing the progress so far and some highlights on the next steps.
+
+The data for this analysis is sourced from the internet, using web crawler to extract text data from various sources like twitter, news and blogs. all the text data are sourced in **English** language.
+
+### Load and process data
+
+Let us load the text data from the three sources and view its summary.
+```{r LoadData, echo =TRUE, warning=FALSE, message=FALSE}
+set.seed(1220)
+
+twitter <- file("data/Coursera-SwiftKey/final/en_US/en_US.twitter.txt", "r")
+tweet<-readLines(twitter)
+
+blogs <- file("data/Coursera-SwiftKey/final/en_US/en_US.blogs.txt", "r") 
+blog<-readLines(blogs)
+
+news <- file("data/Coursera-SwiftKey/final/en_US/en_US.news.txt", "r")
+new<-readLines(news)
+
+#Close the connection
+close(twitter)
+close(blogs)
+close(news)
+
+#Get basic stats for each of the source
+dtls<-data.frame(Source = c("Twitter", "Blogs", "News"),
+              LineLength = c(length(tweet), length(blog), length(new)),
+              Size = c(paste(round(as.numeric(object.size(tweet) / 1e+9), 2), "GB"),
+                       paste(round(as.numeric(object.size(blog) / 1e+9), 2), "GB"),
+                       paste(round(as.numeric(object.size(new) / 1e+9), 2), "GB"))
+                 )
+dtls
+```
+We can see that the overall size of the corpus is around 0.62 GB. To perform the exploratory analysis, we can subset 20000 lines from the combined corpus.
+Let us clean the data by removing unwanted punctuation marks and multiple spaces found in the text.
+Also few bad words are observed in the raw data. Lets apply profanity filtering to remove these words from our training set.
+```{r ProcessData, echo = TRUE}
+
+#Combine all data sources
+dat = c(tweet, blog, new)
+
+#Sample from the combined source
+text = sample(dat, 20000)
+
+#Remove unnecessary objects
+rm("dat", "tweet", "blog", "new", "twitter", "blogs", "news")
+
+#Remove any non-English characters from corpus
+text<-iconv(text, from =  "latin1", to = "ASCII", sub = "")
+
+#Tag all end of sentence punctuation to a string to be split later
+text<-gsub("';|\\.|!|\\?'", "endofsentence", text, perl = TRUE)
+
+#Clean multiple white spaces to single space
+text <- trimws(gsub("\\s+", " ", text))
+
+#Removes one letter words
+text<-gsub("\\W*\\b\\w{1}\\b", " ", text, perl = TRUE) 
+
+#convert all text to lower case
+text<-tolower(text)
+
+#Remove Improper Words
+text<-gsub("fuck|shit|piss off|dickhead|asshole|bitch|bastard|damn|cunt|bugger|motherfucker", "", text, perl = TRUE)
+
+#Tag all end of sentence punctuation to a string to be split later
+sentence<-data.frame(sentence = unlist(strsplit(text, "endofsentence", perl=T)))
+
+#Remove records which are blank or single whitespace
+sentence<-subset(sentence, sentence!="")
+sentence<-subset(sentence, sentence!=" ")
+```
+
+Lets split the data to training and test sets.
+```{r SplitData, echo = TRUE}
+ind<-as.integer(nrow(sentence)*0.75)
+train<-data.frame(sentence = sentence[1:ind,])
+test<-data.frame(sentence = sentence[(ind+1):nrow(sentence),])
+dim(train)
+dim(test)
+```
+
+### Tokenization
+
+Now we have processed the corpus to sentences and split the data to training and test sets. 
+Let us further split these sentences to words or combination of words as tokens.
+
+```{r CreateNGrams, echo = TRUE, warning=FALSE, message=FALSE}
+library(ggplot2)
+library(caret)
+library(dplyr)
+library(quanteda)
+
+train.tokens<-tokens(train$sentence, 
+                     what = "word",
+                     remove_symbols = TRUE,
+                     remove_numbers = TRUE,
+                     remove_punct = TRUE,
+                     remove_url = TRUE)
+train.tokens<-tokens_tolower(train.tokens)
+```
+
+we have the `train.tokens` with words split from each sentence. Let us create Unigrams,BiGrams and Trigrams along with its corresponding document frequency matrix.
+
+#### Unigram
+```{r Unigram, echo = TRUE}
+train.Ugram<-tokens_ngrams(train.tokens, n = 1)
+dfm.Ugram<-dfm(train.Ugram, tolower = FALSE)
+
+```
+Top features from Unigram
+```{r UniTopFeatures, echo = TRUE}
+tstat_Ufreq<-textstat_frequency(dfm.Ugram)
+df<-data.frame(tstat_Ufreq)
+df1<- subset(df, frequency >3)
+
+head(df1, 10)
+```
+
+
+```{r UniPlot, echo = TRUE}
+dfm.Ugram %>%
+  textstat_frequency(n = 30) %>%
+  ggplot(aes(x = reorder(feature, frequency), y = frequency)) +
+  geom_point() +
+  coord_flip() +
+  labs(title = "Frequent words occurred in the corpus sample", x = "1-gram")+
+  theme_minimal()
+```
+
+#### BiGram
+```{r Bigram, echo = TRUE}
+train.Bgram<-tokens_ngrams(train.tokens, n = 2)
+dfm.Bgram<-dfm(train.Bgram, tolower = FALSE)
+
+```
+Top features from BiGram
+```{r BiTopFeatures, echo = TRUE}
+tstat_Bfreq<-textstat_frequency(dfm.Bgram)
+df<-data.frame(tstat_Bfreq)
+df1<- subset(df, frequency >3)
+
+head(df1, 10)
+```
+
+```{r BiPlot, echo = TRUE}
+dfm.Bgram %>%
+  textstat_frequency(n = 30) %>%
+  ggplot(aes(x = reorder(feature, frequency), y = frequency)) +
+  geom_point() +
+  coord_flip() +
+  labs(title = "Frequent pairs occurred in the corpus sample", x = "2-gram")+
+  theme_minimal()
+```
+
+#### TriGram
+```{r Trigram, echo = TRUE}
+train.Tgram<-tokens_ngrams(train.tokens, n = 3)
+dfm.Tgram<-dfm(train.Tgram, tolower = FALSE)
+
+```
+Top features from TriGram
+```{r TriTopFeatures, echo = TRUE}
+tstat_Tfreq<-textstat_frequency(dfm.Tgram)
+df<-data.frame(tstat_Tfreq)
+df1<- subset(df, frequency >3)
+
+head(df1, 10)
+```
+
+
+```{r TriPlot, echo = TRUE}
+dfm.Tgram %>%
+  textstat_frequency(n = 30) %>%
+  ggplot(aes(x = reorder(feature, frequency), y = frequency)) +
+  geom_point() +
+  coord_flip() +
+  labs(title = "Frequent triplets occurred in the corpus sample", x = "3-gram")+
+  theme_minimal()
+```
+
+### Next Steps
+
+- Now we have the ngram models prepared and have an idea about the corpus. We can start implementing the word prediction model.
+- Considering the Markov assumption, the probability of a next word depends only on the n-1 previous words, where n depends on the ngram input.
+- Using the Good–Turing frequency estimation, we can smooth the proportion of columns in the ngrams.
+- The Katz-Backoff model is considered for estimating the unobserved in unigrams but are prevalent in bigrams and trigrams.
+
+Using the above methods, the prediction model will be incorporated in Shiny app. The user has a text interface to enter his text and receive predictions of the next word based on the words typed.
+

@@ -1,0 +1,492 @@
+---
+title: "Next word prediction using N-grams - Model Build/ Predictions"
+author: "Bharathwaj Sundaresan"
+date: "3/14/2021"
+output: html_document
+---
+### Executive Summary
+
+Around the world, people are spending an increasing amount of time on their mobile devices for email, social networking, banking and a whole range of other activities. But typing on mobile devices can be a serious pain. This project focuses on analyzing a large corpus of text documents to discover the structure in the data and how words are put together. This is a markdown report, showcasing the progress so far and some highlights on the next steps.
+
+The data for this analysis is sourced from the internet, using web crawler to extract text data from various sources like twitter, news and blogs. all the text data are sourced in **English** language.
+
+### Load and process data
+
+Let us load the text data from the three sources and view its summary.
+```{r LoadData, echo =TRUE, warning=FALSE, message=FALSE}
+set.seed(1220)
+
+twitter <- file("data/Coursera-SwiftKey/final/en_US/en_US.twitter.txt", "r")
+tweet<-readLines(twitter)
+
+blogs <- file("data/Coursera-SwiftKey/final/en_US/en_US.blogs.txt", "r") 
+blog<-readLines(blogs)
+
+news <- file("data/Coursera-SwiftKey/final/en_US/en_US.news.txt", "r")
+new<-readLines(news)
+
+#Close the connection
+close(twitter)
+close(blogs)
+close(news)
+
+#Get basic stats for each of the source
+dtls<-data.frame(Source = c("Twitter", "Blogs", "News"),
+              LineLength = c(length(tweet), length(blog), length(new)),
+              Size = c(paste(round(as.numeric(object.size(tweet) / 1e+9), 2), "GB"),
+                       paste(round(as.numeric(object.size(blog) / 1e+9), 2), "GB"),
+                       paste(round(as.numeric(object.size(new) / 1e+9), 2), "GB"))
+                 )
+dtls
+```
+We can see that the overall size of the corpus is around 0.62 GB. To perform the exploratory analysis, we can subset 20000 lines from the combined corpus.
+Let us clean the data by removing unwanted punctuation marks and multiple spaces found in the text.
+Also few bad words are observed in the raw data. Lets apply profanity filtering to remove these words from our training set.
+```{r ProcessData, echo = TRUE}
+
+library(textclean)
+library(hunspell)
+
+#Combine all data sources
+dat = c(tweet, blog, new)
+
+#Sample from the combined source
+text = sample(dat, 500)
+
+#Remove unnecessary objects
+rm("dat", "tweet", "blog", "new", "twitter", "blogs", "news")
+
+
+#=============================Text Cleaning Function=================================================================
+clean_text<-function(text){
+  text<-replace_html(text)
+  text<-replace_internet_slang(text)
+  text<-replace_ordinal(text)
+  text<-replace_date(text)
+  text<-replace_money(text)
+  text<-replace_kern(text)
+  text<-replace_hash(text)
+  text<-replace_names(text)
+  text<-replace_incomplete(text, ".")
+  text<-replace_non_ascii(text)
+  text<-replace_number(text)
+  text<-gsub("[\\!-]+", "!", text)
+  text<-gsub("[\\?-]+", "?", text)
+  text<-gsub("(.)\\1{2,}", "\\1", text)
+  text<-gsub("fuck|shit|piss off|dickhead|asshole|bitch|bastard|damn|cunt|bugger|motherfucker", "", text, perl = TRUE)
+  
+}
+#=============================Sentences Cleaning Function=================================================================
+clean_sentences<-function(text){
+  #Tag all end of sentence punctuation to a string to be split later
+  #sentence<-data.frame(sentence = textshape::split_sentence(text))
+  sentence<-data.frame(sentence = unlist(tokenize_sentence(text)))
+  
+  #Remove records which are blank or single whitespace
+  sentence<-subset(sentence, sentence!="")
+  sentence<-subset(sentence, sentence!=" ")
+  sentence$sentence<-gsub("(^| )b( |$)", "", sentence$sentence)
+  sentence$sentence<-gsub("(^| )c( |$)", "", sentence$sentence)
+  sentence$sentence<-gsub("(^| )d( |$)", "", sentence$sentence)
+  sentence$sentence<-gsub("(^| )e( |$)", "", sentence$sentence)
+  sentence$sentence<-gsub("(^| )f( |$)", "", sentence$sentence)
+  sentence$sentence<-gsub("(^| )g( |$)", "", sentence$sentence)
+  sentence$sentence<-gsub("(^| )h( |$)", "", sentence$sentence)
+  sentence$sentence<-gsub("(^| )z( |$)", "", sentence$sentence)
+  sentence$sentence<-gsub("(^| )j( |$)", "", sentence$sentence)
+  sentence$sentence<-gsub("(^| )k( |$)", "", sentence$sentence)
+  sentence$sentence<-gsub("(^| )l( |$)", "", sentence$sentence)
+  sentence$sentence<-gsub("(^| )m( |$)", "", sentence$sentence)
+  sentence$sentence<-gsub("(^| )n( |$)", "", sentence$sentence)
+  sentence$sentence<-gsub("(^| )o( |$)", "", sentence$sentence)
+  sentence$sentence<-gsub("(^| )p( |$)", "", sentence$sentence)
+  sentence$sentence<-gsub("(^| )q( |$)", "", sentence$sentence)
+  sentence$sentence<-gsub("(^| )r( |$)", "", sentence$sentence)
+  sentence$sentence<-gsub("(^| )s( |$)", "", sentence$sentence)
+  sentence$sentence<-gsub("(^| )t( |$)", "", sentence$sentence)
+  sentence$sentence<-gsub("(^| )u( |$)", "", sentence$sentence)
+  sentence$sentence<-gsub("(^| )v( |$)", "", sentence$sentence)
+  sentence$sentence<-gsub("(^| )w( |$)", "", sentence$sentence)
+  sentence$sentence<-gsub("(^| )x( |$)", "", sentence$sentence)
+  sentence$sentence<-gsub("(^| )y( |$)", "", sentence$sentence)
+  sentence
+}
+#=============================Spell Check Function=================================================================
+spell_check<-function(sentence){
+  bad<-hunspell(sentence)
+  len<-length(bad[[1]])
+  if(len >0){
+    for(i in 1:len){
+      sentence<-gsub(bad[[1]][i],
+                     unlist(hunspell_suggest(bad[[1]][[i]]))[1],
+                     sentence)
+    }
+  }
+  sentence
+}
+```
+
+Lets apply these functions to our subset of data.
+```{r, ApplFunction, echo =TRUE} 
+library(quanteda)
+#Takes time to process
+text<-clean_text(text)
+text.clean<-clean_sentences(text)
+text.clean$sentence<-sapply(text.clean$sentence, spell_check)
+```
+
+Lets split the data to training and test sets.
+```{r SplitData, echo = TRUE}
+ind<-as.integer(nrow(text.clean)*0.75)
+train<-data.frame(sentence = text.clean[1:ind,])
+test<-data.frame(sentence = text.clean[(ind+1):nrow(text.clean),])
+dim(train)
+dim(test)
+```
+
+### Tokenization
+
+Now we have processed the corpus to sentences and split the data to training and test sets. 
+Using `quanteda` package, lets start creating the tokens and document term matrix
+
+```{r CreateNGrams, echo = TRUE, warning=FALSE, message=FALSE}
+library(plyr)
+library(dplyr)
+library(quanteda)
+library(cld3)
+
+generateNGram <- function(corpus, level = 1) {
+  options(mc.cores=1)
+  tokenizer <- tokens(corpus, 
+                      what = "word",
+                      remove_symbols = TRUE,
+                      remove_numbers = TRUE,
+                      remove_punct = TRUE,
+                      remove_url = TRUE)
+  tdm <- dfm(tokens_ngrams(tokenizer, n = level), tolower = FALSE)
+  tstat_nfreq<-data.frame(textstat_frequency(tdm))
+  freq<-data.frame(word = tstat_nfreq$feature, freq = tstat_nfreq$frequency)
+}
+
+tetraGram <- generateNGram(train$sentence, 4)
+```
+
+Now we have trained the N grams from our processed data. Let us re-organize the data frame to split the ngrams to corresponding columns, making it easier to use for predictions later.
+
+```{r SplitNgrams, echo = TRUE}
+tetraGramSplit <- within(tetraGram, word <- data.frame(do.call('rbind', strsplit(as.character(word), "_", fixed = T))))
+rownames(tetraGramSplit) <- 1:nrow(tetraGramSplit)
+tetraGramSplit$word1 <- tetraGramSplit$word$X1
+tetraGramSplit$word2 <- tetraGramSplit$word$X2
+tetraGramSplit$word3 <- tetraGramSplit$word$X3
+tetraGramSplit$word4 <- tetraGramSplit$word$X4
+tetraGramSplit <- tetraGramSplit %>% select(word1, word2, word3, word4, freq)
+```
+
+Now we have completed building the necessary tables, we can start building the prediction model. In this scenario, we are trying to predict the next word based on a given input, We are going to make use of the n-grams generated earlier to develop a model to build a probability of the 4th word, provided the first 3 words are given. Using `dplyr` package, we are generating models for different scenarios.
+
+```{r modelGeneration, echo = TRUE}
+library(dplyr)
+
+model <- list()
+
+model$w1w2w3 <- tetraGramSplit %>%
+  group_by(word1, word2, word3) %>%
+  mutate(freqTotal = sum(freq)) %>%
+  group_by(word4, add = TRUE) %>%
+  mutate(prob = freq / freqTotal) %>%
+  arrange(word1, word2, word3, word4, desc(prob)) %>%
+  as.data.frame()
+
+model$w2w3 <- tetraGramSplit %>%
+  select(word2, word3, word4, freq) %>%
+  group_by(word2, word3, word4) %>%
+  summarise_each(funs(sum(freq))) %>%
+  group_by(word2, word3) %>%
+  mutate(freqTotal = sum(freq)) %>%
+  group_by(word4, add = TRUE) %>%
+  mutate(prob = freq / freqTotal) %>%
+  arrange(word2, word3, word4, desc(prob)) %>%
+  as.data.frame()
+
+model$w3 <- tetraGramSplit %>%
+  select(word3, word4, freq) %>%
+  group_by(word3, word4) %>%
+  summarise_each(funs(sum(freq))) %>%
+  group_by(word3) %>%
+  mutate(freqTotal = sum(freq)) %>%
+  group_by(word4, add = TRUE) %>%
+  mutate(prob = freq / freqTotal) %>%
+  arrange(word3, word4, desc(prob)) %>%
+  as.data.frame()
+
+model$w1w3 <- tetraGramSplit %>%
+  select(word1, word3, word4, freq) %>%
+  group_by(word1, word3, word4) %>%
+  summarise_each(funs(sum(freq))) %>%
+  group_by(word1, word3) %>%
+  mutate(freqTotal = sum(freq)) %>%
+  group_by(word4, add = TRUE) %>%
+  mutate(prob = freq / freqTotal) %>%
+  arrange(word1, word3, word4, desc(prob)) %>%
+  as.data.frame()
+
+model$w1w2 <- tetraGramSplit %>%
+  select(word1, word2, word4, freq) %>%
+  group_by(word1, word2, word4) %>%
+  summarise_each(funs(sum(freq))) %>%
+  group_by(word1, word2) %>%
+  mutate(freqTotal = sum(freq)) %>%
+  group_by(word4, add = TRUE) %>%
+  mutate(prob = freq / freqTotal) %>%
+  arrange(word1, word2, word4, desc(prob)) %>%
+  as.data.frame()
+
+model$w1 <- tetraGramSplit %>%
+  select(word1, word4, freq) %>%
+  group_by(word1, word4) %>%
+  summarise_each(funs(sum(freq))) %>%
+  group_by(word1) %>%
+  mutate(freqTotal = sum(freq)) %>%
+  group_by(word4, add = TRUE) %>%
+  mutate(prob = freq / freqTotal) %>%
+  arrange(word1, word4, desc(prob)) %>%
+  as.data.frame()
+
+model$w2 <- tetraGramSplit %>%
+  select(word2, word4, freq) %>%
+  group_by(word2, word4) %>%
+  summarise_each(funs(sum(freq))) %>%
+  group_by(word2) %>%
+  mutate(freqTotal = sum(freq)) %>%
+  group_by(word4, add = TRUE) %>%
+  mutate(prob = freq / freqTotal) %>%
+  arrange(word2, word4, desc(prob)) %>%
+  as.data.frame()
+
+model$w4 <- tetraGramSplit %>%
+  select(word4, freq) %>%
+  group_by(word4) %>%
+  dplyr::summarise(freq = n()) %>%
+  mutate(prob = freq / sum(freq)) %>%
+  arrange(word4, desc(prob)) %>%
+  as.data.frame()
+
+```
+
+Using the n-gram data, we have now built an array of models based on different n-gram sizes. Using this model, we can get the frequency probabilities for predicting the next word.
+
+I am using the [Simple Good-Turing Frequency Estimation](https://en.wikipedia.org/wiki/Good%E2%80%93Turing_frequency_estimation) technique for the probabilistic prediction of next word. This technique computes the probability based on observed word frequencies. 
+
+Special Thanks to fellow student [Ramaa Nathan's](http://rstudio-pubs-static.s3.amazonaws.com/33754_4d463ac84bd24721bb9fe6a707ef6236.html) work on building Frequency Estimation Function.
+
+```{r calculateSimpleGoodTuring, echo = TRUE}
+calculateSimpleGoodTuring <- function(model){
+  
+  freqTable <- table(model$freq)
+  
+  SGT_DT <- data.frame(
+    r=as.numeric(names(freqTable)),
+    n=as.vector(freqTable),
+    Z=vector("numeric",length(freqTable)),
+    logr=vector("numeric",length(freqTable)),
+    logZ=vector("numeric",length(freqTable)),
+    r_star=vector("numeric",length(freqTable)),
+    p=vector("numeric",length(freqTable)))
+  
+  num_r <- nrow(SGT_DT)
+  
+  for (j in 1:num_r) {
+    if(j == 1) {
+      r_i <- 0
+    } else {
+      r_i <- SGT_DT$r[j-1]
+    }
+    if(j == num_r) {
+      r_k <- SGT_DT$r[j]
+    } else {
+      r_k <- SGT_DT$r[j+1]
+    }
+    SGT_DT$Z[j] <- 2 * SGT_DT$n[j] / (r_k - r_i)
+  }
+  
+  SGT_DT$logr <- log(SGT_DT$r)
+  SGT_DT$logZ <- log(SGT_DT$Z)
+  linearFit <- lm(SGT_DT$logZ ~ SGT_DT$logr)
+  c0 <- linearFit$coefficients[1]
+  c1 <- linearFit$coefficients[2]
+  
+  use_y = FALSE
+  for (j in 1:(num_r-1)) {
+    r_plus_1 <- SGT_DT$r[j] + 1
+    
+    s_r_plus_1 <- exp(c0 + (c1 * SGT_DT$logr[j+1]))
+    s_r <- exp(c0 + (c1 * SGT_DT$logr[j]))
+    y <- r_plus_1 * s_r_plus_1/s_r
+    
+    if(use_y) {
+      SGT_DT$r_star[j] <- y
+    } else {
+      n_r_plus_1 <- SGT_DT$n[SGT_DT$r == r_plus_1]
+      if(length(n_r_plus_1) == 0 ) {
+        SGT_DT$r_star[j] <- y
+        use_y = TRUE
+      } else {
+        n_r <- SGT_DT$n[j]
+        x<-(r_plus_1) * n_r_plus_1/n_r
+        if (abs(x-y) > 1.96 * sqrt(((r_plus_1)^2) * (n_r_plus_1/((n_r)^2))*(1+(n_r_plus_1/n_r)))) {
+          SGT_DT$r_star[j] <- x
+        } else {
+          SGT_DT$r_star[j] <- y
+          use_y = TRUE
+        }
+      }
+    }
+    if(j==(num_r-1)) {
+      SGT_DT$r_star[j+1] <- y
+    }
+  }
+  N <- sum(SGT_DT$n * SGT_DT$r)
+  Nhat <- sum(SGT_DT$n * SGT_DT$r_star)
+  Po <- SGT_DT$n[1] / N
+  SGT_DT$p <- (1-Po) * SGT_DT$r_star/Nhat
+  
+  return(SGT_DT)
+}
+```
+
+Using the above function. Let us start estimating the frequency probabilities for observed n-grams in the list of models developed earlier.
+
+```{r FreqProbabilities, echo = TRUE}
+sgt <- list()
+sgt$w1w2w3 <- calculateSimpleGoodTuring(model$w1w2w3)
+sgt$w2w3 <- calculateSimpleGoodTuring(model$w2w3)
+sgt$w3 <- calculateSimpleGoodTuring(model$w3)
+sgt$w1w3 <- calculateSimpleGoodTuring(model$w1w3)
+sgt$w1w2 <- calculateSimpleGoodTuring(model$w1w2)
+sgt$w1 <- calculateSimpleGoodTuring(model$w1)
+sgt$w2 <- calculateSimpleGoodTuring(model$w2)
+sgt$w4 <- calculateSimpleGoodTuring(model$w4)
+```
+
+Now we have completed building necessary data for making our predicitons and testing out the model.
+Let use write few helper functions to predict next words
+
+```{r Predictions, echo = TRUE}
+#Function to predict a given N-Gram frequencies
+predictNGram <- function(resultDF, labelName, sgt, validResultsList, subGram) {
+  if(nrow(subGram) > 0 & !(nrow(resultDF) > 0)) {
+    #print(labelName)
+    subGram$probAdj <- sapply(subGram$freq, FUN = function(x) sgt$p[sgt$r == x])
+    subGram <- subGram %>% select(word4, probAdj)
+    if(!is.null(validResultsList) & nrow(subGram) > 0) {
+      subGram <- subGram %>% filter(word4 %in% validResultsList)
+    }
+    eval.parent(substitute(resultDF <- subGram))
+  }
+}
+#Using the above function, This function helps predict the frequency probability for different models
+predictNextWord <- function(testSentence, model, sgt, validResultsList=NULL) {
+  
+  options("scipen"=100, "digits"=8)
+  
+  testSentenceList <- unlist(strsplit(testSentence," "))
+  noOfWords <- length(testSentenceList)
+  
+  resultDF <- data.frame(word4 = factor(), probAdj = numeric())
+  
+  predictNGram(resultDF, "w1w2w3", sgt$w1w2w3, validResultsList,
+               model$w1w2w3 %>% filter(word1 == testSentenceList[noOfWords-2],
+                                       word2 == testSentenceList[noOfWords-1],
+                                       word3 == testSentenceList[noOfWords]))
+  
+  predictNGram(resultDF, "w2w3", sgt$w2w3, validResultsList,
+               model$w2w3 %>% filter(word2 == testSentenceList[noOfWords-1],
+                                     word3 == testSentenceList[noOfWords]))
+  
+  predictNGram(resultDF, "w3", sgt$w3, validResultsList,
+               model$w3 %>% filter(word3 == testSentenceList[noOfWords]))
+  
+  predictNGram(resultDF, "w1w2", sgt$w1w2, validResultsList,
+               model$w1w2 %>% filter(word1 == testSentenceList[noOfWords-2],
+                                     word2 == testSentenceList[noOfWords-1]))
+  
+  predictNGram(resultDF, "w1w3", sgt$w1w3, validResultsList,
+               model$w1w3 %>% filter(word1 == testSentenceList[noOfWords-2],
+                                     word3 == testSentenceList[noOfWords]))
+  
+  predictNGram(resultDF, "w1", sgt$w1, validResultsList,
+               model$w1 %>% filter(word1 == testSentenceList[noOfWords-2]))
+  
+  return(resultDF %>% arrange(desc(probAdj)))
+  
+}
+#Using the above functions. This is the final function call to predict the next word.
+predictWord <- function(sentence) {
+  sentence <- stripWhitespace(sentence)
+  sentence <- tolower(sentence)
+  sentence <- removeNumbers(sentence)
+  sentence <- removePunctuation(sentence, preserve_intra_word_dashes = TRUE)
+  sentenceList <- unlist(strsplit(sentence," "))
+  noOfWords <- length(sentenceList)
+  if(noOfWords >= 3) {
+    return(predictNextWord(paste(
+      sentenceList[noOfWords-2],
+      sentenceList[noOfWords-1],
+      sentenceList[noOfWords]), predictor.model, predictor.sgt))
+  } else if(noOfWords == 2) {
+    return(predictNextWord(paste(
+      "-",
+      sentenceList[noOfWords-1],
+      sentenceList[noOfWords]), predictor.model, predictor.sgt))
+  } else if(noOfWords == 1) {
+    return(predictNextWord(paste(
+      "-",
+      "-",
+      sentenceList[noOfWords]), predictor.model, predictor.sgt))
+  }
+}
+```
+
+
+As most of the functions take time to run. Let us load the model and the sgt objects saved earlier
+```{r, LoadModel, echo = TRUE, eval = FALSE}
+data_clean_dir <- "data/clean"
+data_sgt_file <- "sgt_model"
+data_model_file <- "data_model"
+
+variables <- ls()
+if(sum(variables == "model") == 0) {
+  model <- readRDS(sprintf("%s/%s.rds", data_clean_dir, data_model_file))
+  #variables <- ls()
+}
+
+if(sum(variables == "sgt") == 0) {
+  sgt <- readRDS(sprintf("%s/%s.rds", data_clean_dir, data_sgt_file))
+  variables <- ls()
+}
+
+```
+
+Let us test out the above functions to predict few words from our model
+
+```{r TestPred, echo = TRUE}
+library(tm)
+predictor <- list()
+predictor.model <- model
+predictor.sgt <- sgt
+predictor.predictWord <- predictWord
+
+head(predictor.predictWord("almost all of"), 10)
+```
+
+
+### Next Steps
+
+- Now we have the ngram models prepared and have an idea about the corpus. We can start implementing the word prediction model.
+- Considering the Markov assumption, the probability of a next word depends only on the n-1 previous words, where n depends on the ngram input.
+- Using the Good–Turing frequency estimation, we can smooth the proportion of columns in the ngrams.
+- The Katz-Backoff model is considered for estimating the unobserved in unigrams but are prevalent in bigrams and trigrams.
+
+Using the above methods, the prediction model will be incorporated in Shiny app. The user has a text interface to enter his text and receive predictions of the next word based on the words typed.
+
